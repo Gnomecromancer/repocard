@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "repocard"
+version = "0.1.0"
+description = "Generate SVG/PNG stat cards for GitHub repos"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["github", "svg", "card", "readme", "stats"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Documentation",
+]
+dependencies = [
+    "click>=8.0.0",
+]
+
+[project.optional-dependencies]
+png = ["cairosvg>=2.6.0"]
+
+[project.scripts]
+repocard = "repocard.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Gnomecromancer/repocard"
+Repository = "https://github.com/Gnomecromancer/repocard"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["repocard*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
