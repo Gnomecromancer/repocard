@@ -11,7 +11,7 @@ from pathlib import Path
 import click
 
 from . import __version__
-from .api import fetch
+from .api import fetch, fetch_all_repos
 from .render import render_svg
 
 
@@ -154,3 +154,60 @@ def serve(host: str, port: int, ttl: int, token: str | None):
         server.serve_forever()
     except KeyboardInterrupt:
         click.echo("\nstopped")
+
+
+@main.command()
+@click.argument("owner")
+@click.option(
+    "--output-dir", "-d",
+    required=True,
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Directory to write SVG files into.",
+)
+@click.option(
+    "--token", default=None, envvar="GITHUB_TOKEN",
+    help="GitHub token for higher rate limits.",
+)
+@click.option(
+    "--include-forks",
+    is_flag=True,
+    default=False,
+    help="Also generate cards for forked repos (skipped by default).",
+)
+def batch(owner: str, output_dir: Path, token: str | None, include_forks: bool):
+    """
+    Generate SVG cards for all public repos owned by OWNER.
+
+    \b
+    Examples:
+        repocard batch torvalds --output-dir ./cards
+        repocard batch psf --output-dir /tmp/psf-cards --include-forks
+        repocard batch Gnomecromancer --output-dir ./out --token $GITHUB_TOKEN
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    click.echo(f"fetching repos for {owner} …")
+    try:
+        repos = fetch_all_repos(owner, token=token, include_forks=include_forks)
+    except Exception as e:
+        click.echo(f"error: {e}", err=True)
+        sys.exit(1)
+
+    if not repos:
+        click.echo("no repos found (nothing to do)")
+        return
+
+    click.echo(f"generating cards for {len(repos)} repo(s)…")
+    errors = 0
+    for repo in repos:
+        out_path = output_dir / f"{repo.name}.svg"
+        try:
+            svg = render_svg(repo)
+            out_path.write_text(svg, encoding="utf-8")
+            click.echo(f"  {repo.full_name} → {out_path}")
+        except Exception as e:
+            click.echo(f"  warning: skipping {repo.full_name}: {e}", err=True)
+            errors += 1
+
+    done = len(repos) - errors
+    click.echo(f"done — {done}/{len(repos)} cards written to {output_dir}")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "repocard"
-version = "0.1.1"
+version = "0.2.0"
 description = "Generate SVG/PNG stat cards for GitHub repos"
 readme = "README.md"
 license = "MIT"
