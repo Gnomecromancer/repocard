@@ -75,3 +75,82 @@ def generate(repo_slug: str, output: Path | None, png: bool):
         out.write_text(svg, encoding="utf-8")
 
     click.echo(f"saved {out}")
+
+
+@main.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", "-p", default=8765, show_default=True)
+@click.option("--ttl", default=300, show_default=True, help="Cache TTL in seconds.")
+@click.option("--token", default=None, envvar="GITHUB_TOKEN",
+              help="GitHub token for higher rate limits.")
+def serve(host: str, port: int, ttl: int, token: str | None):
+    """
+    Run a local card server. Serve cards at http://host:port/{owner}/{repo}.
+
+    Useful for live README badges (star counts update automatically).
+
+    \b
+    Example:
+        repocard serve --port 8765
+        # Then in your README:
+        # ![card](http://localhost:8765/psf/requests)
+    """
+    import time
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    _cache: dict[str, tuple[str, float]] = {}
+    _lock = threading.Lock()
+
+    def _get_svg(owner: str, repo: str) -> str:
+        key = f"{owner}/{repo}"
+        now = time.time()
+        with _lock:
+            if key in _cache:
+                svg, ts = _cache[key]
+                if now - ts < ttl:
+                    return svg
+
+        data = fetch(owner, repo)
+        svg = render_svg(data)
+        with _lock:
+            _cache[key] = (svg, time.time())
+        return svg
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):
+            click.echo(f"{self.address_string()} {fmt % args}")
+
+        def do_GET(self):
+            parts = self.path.strip("/").split("/")
+            if len(parts) != 2 or not all(parts):
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b"Expected /owner/repo")
+                return
+
+            owner, repo = parts
+            try:
+                svg = _get_svg(owner, repo)
+            except Exception as e:
+                self.send_response(502)
+                self.end_headers()
+                self.wfile.write(str(e).encode())
+                return
+
+            body = svg.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+            self.send_header("Cache-Control", f"public, max-age={ttl}")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = HTTPServer((host, port), Handler)
+    click.echo(f"repocard server listening on http://{host}:{port}/")
+    click.echo(f"  embed in README: ![card](http://{host}:{port}/owner/repo)")
+    click.echo("  Ctrl+C to stop")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        click.echo("\nstopped")
